@@ -8,23 +8,49 @@
 #include <unistd.h>
 #include <stdbool.h> 
 
-void takeFile(char msg[], char namez[]){
-  	char totalfile[1024];
-  	strcpy(totalfile, namez);
+char user[1024], passw[1024];
+
+void substr(char *s, char *sub, int y, int z) {
+   int aa = 0;
+   while (aa < z) {
+      sub[aa] = s[y + aa];
+      aa++;
+   }
+   sub[aa] = '\0';
+}
+
+void handlePass(char filename[]){
+	int charCount=0;
+	int j = 12;
+	memset(user, 0, 1024);
+	memset(passw, 0, 1024);
+	for(; j<strlen(filename); j++){
+  		if(filename[j] == ' '){
+  			break;
+  		}
+  		user[charCount] = filename[j];
+  		charCount++;
+  	}
   	
-	FILE *fp;
-	fp = fopen (totalfile, "w");
-	fprintf(fp, "%s", msg);
-	fclose(fp);
-	puts("File terdownload");
+  	charCount=0;
+  	j = j + 16;
+	
+	for(; j<strlen(filename); j++){
+  		if(filename[j] == ';'){
+  			break;
+  		}
+  		passw[charCount] = filename[j];
+  		charCount++;
+  	}
+  
+ 	return;
 }
 
 int main(int argc , char *argv[])
 {
-	int sock, valread, choice;
+	int sock, valread;
 	struct sockaddr_in server;
-	char message[1000] , server_reply[5000] , username[1024], pass[1024], temp[1024];
-	bool isLogin = false;
+	char message[1000] , server_reply[5000] , username[1024], pass[1024], temp[1024], choice[1000];
 	
 	//Create socket
 	sock = socket(AF_INET , SOCK_STREAM , 0);
@@ -50,9 +76,9 @@ int main(int argc , char *argv[])
 	recv(sock , server_reply , 1024 , 0);
 	
 	puts("Connected\n");
-	
-	strcpy(username, "l ");
-        strcat(username, argv[2]);
+	if(geteuid() != 0){
+		strcpy(username, "l ");
+    	strcat(username, argv[2]);
         strcat(username, ":");
         strcat(username, argv[4]);
         printf("%s\n", username);
@@ -66,45 +92,41 @@ int main(int argc , char *argv[])
         {
             printf("login success\n");
             send(sock, "sukses", 6, 0);
-	    isLogin = true;
         }
         else if(strcmp(server_reply, "failure")==0)
         {
             printf("login failed\n");
         }
-	
-	if(isLogin == true){
-		query_user[strlen(query_user)-1] = '\0';
-		if (strstr(query_user, "CREATE USER")!=NULL)
-		{
-			if (strstr(query_user, "IDENTIFIED BY")==NULL) {
-				 printf("Invalid syntax for create user.\n");
-			return;
-		    }
-		    split_string(query_user);
-			strcpy(username, "r ");
-			strcat(username, argv[2]);
-			strcat(username, ":");
-			strcat(username, argv[4]);
-			printf("%s\n", username);
-			if( send(sock , username , strlen(username) , 0) < 0)
-			{
-			    puts("Send failed");
-			    return 1;
-			}
-			memset(server_reply, 0, 1024);
-			if( recv(sock , server_reply , 1024 , 0) < 0)
-			{
-				puts("recv failed");
-			}
-			printf("%s\n", server_reply);
-		}
 	}
-	
+	else{
+		printf("No login needed\n");
+	}
 	screen1:
     printf("TEMPORARY LANDING PAGE\nwatchu wanna do : ");
-    scanf("%d", &choice);
+    scanf("%[^\n]",choice); getchar();
+    memset(temp, 0, 1000);
+    substr(choice, temp, 0, 11);
+    printf("%s", temp);
+    if(!strcmp(temp, "CREATE USER")) {
+    	strcpy(username, "r ");
+    	handlePass(choice);
+        strcat(username, user);
+        strcat(username, ":");
+        strcat(username, passw);
+        if( send(sock , username , strlen(username) , 0) < 0)
+        {
+            puts("Send failed");
+            return 1;
+        }
+        memset(server_reply, 0, 1024);
+        if( recv(sock , server_reply , 1024 , 0) < 0)
+		{
+			puts("recv failed");
+		}
+		printf("%s", server_reply);
+    }
     
+    goto screen1;
 	
 	close(sock);
 	return 0;
