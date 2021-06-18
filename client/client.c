@@ -1,14 +1,20 @@
-/*
-	C ECHO client example using sockets
-*/
-#include <stdio.h>	//printf
-#include <string.h>	//strlen
-#include <sys/socket.h>	//socket
-#include <arpa/inet.h>	//inet_addr
-#include <unistd.h>
+#include<stdio.h>
+#include<string.h>	//strlen
+#include<stdlib.h>	//strlen
+#include<sys/socket.h>
+#include<arpa/inet.h>	//inet_addr
+#include<unistd.h>	//write
+#include<pthread.h> //for threading , link with lpthread
 #include <stdbool.h> 
+#include <sys/stat.h>
+#include <sys/types.h>
 
-char user[1024], passw[1024];
+char akuns[200][1024] = {0}, tosend[5000], logined[200], perms[200][1024] = {0};
+int akuncount = 0, filecount = 0, permcount = 0;
+bool someone = false;
+
+//the thread function
+void *connection_handler(void *);
 
 void substr(char *s, char *sub, int y, int z) {
    int aa = 0;
@@ -19,115 +25,191 @@ void substr(char *s, char *sub, int y, int z) {
    sub[aa] = '\0';
 }
 
-void handlePass(char filename[]){
-	int charCount=0;
-	int j = 12;
-	memset(user, 0, 1024);
-	memset(passw, 0, 1024);
-	for(; j<strlen(filename); j++){
-  		if(filename[j] == ' '){
-  			break;
-  		}
-  		user[charCount] = filename[j];
-  		charCount++;
-  	}
-  	
-  	charCount=0;
-  	j = j + 16;
-	
-	for(; j<strlen(filename); j++){
-  		if(filename[j] == ';'){
-  			break;
-  		}
-  		passw[charCount] = filename[j];
-  		charCount++;
-  	}
-  
- 	return;
+
+void registerAccount(char msg[]){
+	for(int i=2; i<strlen(msg); i++){
+		akuns[akuncount][i-2]=msg[i];
+	}
+	akuncount++;
+	FILE *fp;
+	fp = fopen ("akun.txt", "a");
+	fprintf(fp, "%s\n", akuns[akuncount-1]);
+	fclose(fp);
+}
+
+void registerPerm(char msg[]){
+	for(int i=2; i<strlen(msg); i++){
+		perms[permcount][i-2]=msg[i];
+	}
+	permcount++;
+	FILE *fp;
+	fp = fopen ("perm.txt", "a");
+	fprintf(fp, "%s\n", perms[permcount-1]);
+	fclose(fp);
+}
+
+bool loginAccount(char msg[]){
+	char checker[strlen(msg)-1];
+	memset(checker, 0, strlen(msg)-1);
+	for(int i=2; i<strlen(msg); i++){
+		checker[i-2]=msg[i];
+	}
+	for(int j=0; j<akuncount; j++){
+		if(strcmp(akuns[j], checker)==0){
+			strcpy(logined, checker);
+			return true;
+		}
+	}
+	return false;
 }
 
 int main(int argc , char *argv[])
 {
-	int sock, valread;
-	struct sockaddr_in server;
-	char message[1000] , server_reply[5000] , username[1024], pass[1024], temp[1024], choice[1000];
+	int socket_desc , client_sock , c , *new_sock;
+	struct sockaddr_in server , client;
 	
 	//Create socket
-	sock = socket(AF_INET , SOCK_STREAM , 0);
-	if (sock == -1)
+	socket_desc = socket(AF_INET , SOCK_STREAM , 0);
+	if (socket_desc == -1)
 	{
 		printf("Could not create socket");
 	}
 	puts("Socket created");
 	
-	server.sin_addr.s_addr = inet_addr("127.0.0.1");
+	//Prepare the sockaddr_in structure
 	server.sin_family = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_port = htons( 8887 );
-
-	//Connect to remote server
-	if (connect(sock , (struct sockaddr *)&server , sizeof(server)) < 0)
+	
+	//Bind
+	if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
 	{
-		perror("connect failed. Error");
+		//print the error message
+		perror("bind failed. Error");
+		return 1;
+	}
+	puts("bind done");
+	
+	//Listen
+	listen(socket_desc , 10);
+	
+	FILE *filez;
+    char perfile[1024];
+    filez = fopen("akun.txt", "a+");
+    if(filez == NULL) exit(0);
+    while(fscanf(filez, "%s\n", perfile) != EOF)
+    {
+        strcpy(akuns[akuncount], perfile);
+        akuncount++;
+    }
+    fclose(filez);
+    
+    FILE *filez1;
+    char perfile1[1024];
+    filez1 = fopen("perm.txt", "a+");
+    if(filez1 == NULL) exit(0);
+    while(fscanf(filez, "%s\n", perfile1) != EOF)
+    {
+        strcpy(perms[permcount], perfile1);
+        permcount++;
+    }
+    fclose(filez1);
+	
+	int result = mkdir("/home/solxius/Desktop/Sisop/FP/Server/database", 0777);
+	
+	//Accept and incoming connection
+	puts("Waiting for incoming connections...");
+	c = sizeof(struct sockaddr_in);
+	
+	while( (client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) )
+	{
+		puts("Connection accepted");
+		
+		pthread_t sniffer_thread;
+		new_sock = malloc(1);
+		*new_sock = client_sock;
+		
+		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) new_sock) < 0)
+		{
+			perror("could not create thread");
+			return 1;
+		}
+		
+		//Now join the thread , so that we dont terminate before the thread
+		//pthread_join( sniffer_thread , NULL);
+		puts("Handler assigned");
+	}
+	
+	if (client_sock < 0)
+	{
+		perror("accept failed");
 		return 1;
 	}
 	
-	puts("Please wait.\n");
+	return 0;
+}
+
+/*
+ * This will handle connection for each client
+ * */
+void *connection_handler(void *socket_desc)
+{
+	//Get the socket descriptor
+	int sock = *(int*)socket_desc;
+	int read_size;
+	char *message , client_message[5000], apple[100];
 	
-	recv(sock , server_reply , 1024 , 0);
+	while(someone);
+	send(sock, "ye", 2, 0 );
 	
-	puts("Connected\n");
-	if(geteuid() != 0){
-		strcpy(username, "l ");
-    	strcat(username, argv[2]);
-        strcat(username, ":");
-        strcat(username, argv[4]);
-        printf("%s\n", username);
-        send(sock, username, strlen(username), 0);
-        memset(server_reply, 0, 5000);
-        if( recv(sock, server_reply, 1024 , 0) < 0)
-		{
-			puts("recv failed");
+	someone = true;
+	memset(client_message, 0, 5000);
+	memset(tosend, 0, 5000);
+	
+	//Receive a message from client
+	while( (read_size = recv(sock , client_message , 1024 , 0)) > 0 )
+	{
+		if(client_message[0]=='r'){
+			registerAccount(client_message);
+			send(sock, "registered", 10, 0 );
 		}
-        if(strcmp(server_reply, "success")==0)
-        {
-            printf("login success\n");
-            send(sock, "sukses", 6, 0);
-        }
-        else if(strcmp(server_reply, "failure")==0)
-        {
-            printf("login failed\n");
-        }
-	}
-	else{
-		printf("No login needed\n");
-	}
-	screen1:
-    printf("TEMPORARY LANDING PAGE\nwatchu wanna do : ");
-    scanf("%[^\n]",choice); getchar();
-    memset(temp, 0, 1000);
-    substr(choice, temp, 0, 11);
-    printf("%s", temp);
-    if(!strcmp(temp, "CREATE USER")) {
-    	strcpy(username, "r ");
-    	handlePass(choice);
-        strcat(username, user);
-        strcat(username, ":");
-        strcat(username, passw);
-        if( send(sock , username , strlen(username) , 0) < 0)
-        {
-            puts("Send failed");
-            return 1;
-        }
-        memset(server_reply, 0, 1024);
-        if( recv(sock , server_reply , 1024 , 0) < 0)
-		{
-			puts("recv failed");
+		else if(client_message[0]=='l'){
+			bool yo = loginAccount(client_message);
+			if(yo){
+				send(sock, "success", 10, 0 );
+			}
+			else{
+				send(sock, "failure", 10, 0 );
+			}
 		}
-		printf("%s", server_reply);
-    }
-    
-    goto screen1;
+		else if(client_message[0]=='g'){
+			registerPerm(client_message);
+			send(sock, "registered", 10, 0 );
+		}
+		else if(client_message[0]=='c'){
+			char tempo[1024];
+			substr(client_message, tempo, 2, strlen(client_message));
+			char banana[1024] = "/home/solxius/Desktop/Sisop/FP/Server/database/";
+			strcat(banana, tempo);
+			int crete = mkdir(banana, 0777);
+			send(sock, "registered", 10, 0 );
+			
+		}
+		memset(client_message, 0, 5000);
+		memset(tosend, 0, 5000);
+	}
 	
-	close(sock);
+	if(read_size == 0){
+		puts("Client disconnected");
+		fflush(stdout);
+	}
+	else if(read_size == -1){
+		perror("recv failed");
+	}
+		
+	//Free the socket pointer
+	someone=false;
+	free(socket_desc);
+	
 	return 0;
 }
