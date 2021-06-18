@@ -24,6 +24,7 @@ int main(int argc , char *argv[])
 	int sock, valread, choice;
 	struct sockaddr_in server;
 	char message[1000] , server_reply[5000] , username[1024], pass[1024], temp[1024];
+	bool isLogin = false;
 	
 	//Create socket
 	sock = socket(AF_INET , SOCK_STREAM , 0);
@@ -65,35 +66,39 @@ int main(int argc , char *argv[])
         {
             printf("login success\n");
             send(sock, "sukses", 6, 0);
+	    isLogin = true;
         }
         else if(strcmp(server_reply, "failure")==0)
         {
             printf("login failed\n");
         }
-	query_user[strlen(query_user)-1] = '\0';
-	if (strstr(query_user, "CREATE USER")!=NULL)
-	{
-		if (strstr(query_user, "IDENTIFIED BY")==NULL) {
-			 printf("Invalid syntax for create user.\n");
-		return;
-	    }
-	    split_string(query_user);
-		strcpy(username, "r ");
-		strcat(username, argv[2]);
-		strcat(username, ":");
-		strcat(username, argv[4]);
-		printf("%s\n", username);
-		if( send(sock , username , strlen(username) , 0) < 0)
+	
+	if(isLogin == true){
+		query_user[strlen(query_user)-1] = '\0';
+		if (strstr(query_user, "CREATE USER")!=NULL)
 		{
-		    puts("Send failed");
-		    return 1;
+			if (strstr(query_user, "IDENTIFIED BY")==NULL) {
+				 printf("Invalid syntax for create user.\n");
+			return;
+		    }
+		    split_string(query_user);
+			strcpy(username, "r ");
+			strcat(username, argv[2]);
+			strcat(username, ":");
+			strcat(username, argv[4]);
+			printf("%s\n", username);
+			if( send(sock , username , strlen(username) , 0) < 0)
+			{
+			    puts("Send failed");
+			    return 1;
+			}
+			memset(server_reply, 0, 1024);
+			if( recv(sock , server_reply , 1024 , 0) < 0)
+			{
+				puts("recv failed");
+			}
+			printf("%s\n", server_reply);
 		}
-		memset(server_reply, 0, 1024);
-		if( recv(sock , server_reply , 1024 , 0) < 0)
-		{
-			puts("recv failed");
-		}
-		printf("%s\n", server_reply);
 	}
 	
 	screen1:
