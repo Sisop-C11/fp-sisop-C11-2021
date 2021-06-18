@@ -9,12 +9,22 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-char akuns[200][1024] = {0}, tosend[5000], logined[200];
-int akuncount = 0, filecount = 0;
+char akuns[200][1024] = {0}, tosend[5000], logined[200], perms[200][1024] = {0};
+int akuncount = 0, filecount = 0, permcount = 0;
 bool someone = false;
 
 //the thread function
 void *connection_handler(void *);
+
+void substr(char *s, char *sub, int y, int z) {
+   int aa = 0;
+   while (aa < z) {
+      sub[aa] = s[y + aa];
+      aa++;
+   }
+   sub[aa] = '\0';
+}
+
 
 void registerAccount(char msg[]){
 	for(int i=2; i<strlen(msg); i++){
@@ -24,6 +34,17 @@ void registerAccount(char msg[]){
 	FILE *fp;
 	fp = fopen ("akun.txt", "a");
 	fprintf(fp, "%s\n", akuns[akuncount-1]);
+	fclose(fp);
+}
+
+void registerPerm(char msg[]){
+	for(int i=2; i<strlen(msg); i++){
+		perms[permcount][i-2]=msg[i];
+	}
+	permcount++;
+	FILE *fp;
+	fp = fopen ("perm.txt", "a");
+	fprintf(fp, "%s\n", perms[permcount-1]);
 	fclose(fp);
 }
 
@@ -82,6 +103,17 @@ int main(int argc , char *argv[])
         akuncount++;
     }
     fclose(filez);
+    
+    FILE *filez1;
+    char perfile1[1024];
+    filez1 = fopen("perm.txt", "a+");
+    if(filez1 == NULL) exit(0);
+    while(fscanf(filez, "%s\n", perfile1) != EOF)
+    {
+        strcpy(perms[permcount], perfile1);
+        permcount++;
+    }
+    fclose(filez1);
 	
 	int result = mkdir("/home/solxius/Desktop/Sisop/FP/Server/database", 0777);
 	
@@ -149,6 +181,19 @@ void *connection_handler(void *socket_desc)
 			else{
 				send(sock, "failure", 10, 0 );
 			}
+		}
+		else if(client_message[0]=='g'){
+			registerPerm(client_message);
+			send(sock, "registered", 10, 0 );
+		}
+		else if(client_message[0]=='c'){
+			char tempo[1024];
+			substr(client_message, tempo, 2, strlen(client_message));
+			char banana[1024] = "/home/solxius/Desktop/Sisop/FP/Server/database/";
+			strcat(banana, tempo);
+			int crete = mkdir(banana, 0777);
+			send(sock, "registered", 10, 0 );
+			
 		}
 		memset(client_message, 0, 5000);
 		memset(tosend, 0, 5000);
